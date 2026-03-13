@@ -1,7 +1,9 @@
 .venv_project/
 __pycache__/
 *.pkl
+*.csv
 .env
 cmvc/
 active_semi_supervised_clustering/
 datasets/
+results/

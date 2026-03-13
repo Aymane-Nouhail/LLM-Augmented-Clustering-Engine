@@ -1,27 +1,82 @@
 import time
 import os
 from typing import List, Any, Type
+
+# Suppress HuggingFace tokenizers parallelism warning when forking
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from src.config import EMBEDDING_MODEL_NAME, GENERATION_MODEL_NAME, MOCKING_MODE
+from src.config import EMBEDDING_MODEL_NAME, GENERATION_MODEL_NAME, MOCKING_MODE, EMBEDDING_BACKEND, SENTENCE_TRANSFORMER_MODEL
 from langchain_core.embeddings import Embeddings
 from pydantic import BaseModel, Field
 
 class KeyphraseList(BaseModel):
     keyphrases: List[str] = Field(description="A list of keyphrases.")
 
+
+class SentenceTransformerEmbeddings(Embeddings):
+    """
+    Langchain-compatible wrapper for sentence-transformers models.
+
+    Optimizations:
+    - Batched encoding (batch_size=128) to maximise GPU/CPU throughput.
+    - Progress bar for corpora > 100 documents.
+    - Automatic device selection (MPS on Apple Silicon, CUDA if available, else CPU).
+    """
+
+    def __init__(self, model_name: str = "all-mpnet-base-v2", batch_size: int = 128):
+        from sentence_transformers import SentenceTransformer
+        import torch
+        if torch.backends.mps.is_available():
+            device = "mps"
+        elif torch.cuda.is_available():
+            device = "cuda"
+        else:
+            device = "cpu"
+        self._model = SentenceTransformer(model_name, device=device)
+        self._model_name = model_name
+        self._batch_size = batch_size
+        print(f"SentenceTransformer '{model_name}' loaded on {device}.")
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        show_progress = len(texts) > 100
+        vectors = self._model.encode(
+            texts,
+            batch_size=self._batch_size,
+            show_progress_bar=show_progress,
+            convert_to_numpy=True,
+        )
+        return vectors.tolist()
+
+    def embed_query(self, text: str) -> List[float]:
+        vector = self._model.encode([text], convert_to_numpy=True)
+        return vector[0].tolist()
+
+
 class LLMService:
-    def __init__(self, api_key: str):
-        os.environ["OPENAI_API_KEY"] = api_key
+    def __init__(self, api_key: str, embedding_backend: str = EMBEDDING_BACKEND):
+        if api_key:
+            os.environ["OPENAI_API_KEY"] = api_key
         self.embedding_model = None
         self.generation_model = None
         self._embedding_dim = 0
         self._api_delay_seconds = 0
 
         print("Initializing LLM models...")
-        try:
-            self.embedding_model = OpenAIEmbeddings(model=EMBEDDING_MODEL_NAME)
+
+        # --- Embedding model ---
+        if embedding_backend == "sentence_transformers":
             try:
+                self.embedding_model = SentenceTransformerEmbeddings(SENTENCE_TRANSFORMER_MODEL)
+                test_embedding = self.embedding_model.embed_query("test")
+                self._embedding_dim = len(test_embedding)
+                print(f"Embedding dimension: {self._embedding_dim}")
+            except Exception as e:
+                print(f"Error initializing SentenceTransformer: {e}")
+                self.embedding_model = None
+        else:
+            try:
+                self.embedding_model = OpenAIEmbeddings(model=EMBEDDING_MODEL_NAME)
                 test_embedding = self.embedding_model.embed_query("test")
                 self._embedding_dim = len(test_embedding)
                 print(f"Embedding model '{EMBEDDING_MODEL_NAME}' initialized. Dimension: {self._embedding_dim}")
@@ -29,25 +84,27 @@ class LLMService:
                 print(f"Error testing embedding model '{EMBEDDING_MODEL_NAME}': {e}")
                 self.embedding_model = None
 
-            self.generation_model = ChatOpenAI(model=GENERATION_MODEL_NAME, temperature=0)
+        # --- Generation model (always OpenAI) ---
+        if api_key:
             try:
+                self.generation_model = ChatOpenAI(model=GENERATION_MODEL_NAME, temperature=0)
                 self.generation_model.invoke("test")
                 print(f"Generation model '{GENERATION_MODEL_NAME}' initialized.")
             except Exception as e:
                 print(f"Error testing generation model '{GENERATION_MODEL_NAME}': {e}")
                 self.generation_model = None
-
-        except Exception as e:
-            print(f"Error initializing LLM models: {e}")
-            print("Please ensure your OPENAI_API_KEY is set and check model availability.")
-            self.embedding_model = None
+        else:
+            print("No API key provided — generation model unavailable.")
             self.generation_model = None
 
     def is_available(self) -> bool:
         return self.embedding_model is not None and self.generation_model is not None
 
+    def generation_available(self) -> bool:
+        return self.generation_model is not None
+
     def get_embedding_model(self) -> Embeddings:
-        if not self.is_available() or self.embedding_model is None:
+        if self.embedding_model is None:
             raise RuntimeError("Embedding model is not available.")
         return self.embedding_model
 
@@ -66,12 +123,13 @@ class LLMService:
                 pass
 
         if self._embedding_dim == 0:
-            print(f"Warning: Embedding dimension unknown, assuming 1536 for {EMBEDDING_MODEL_NAME}.")
-            return 1536
+            default_dim = 768 if EMBEDDING_BACKEND == "sentence_transformers" else 1536
+            print(f"Warning: Embedding dimension unknown, assuming {default_dim}.")
+            return default_dim
         return self._embedding_dim
 
     def get_embedding(self, text: str) -> List[float]:
-        if not self.is_available() or self.embedding_model is None:
+        if self.embedding_model is None:
             dim = self.get_embedding_dimension()
             if dim > 0:
                 return [0.0] * dim
@@ -95,7 +153,7 @@ class LLMService:
     def get_chat_completion(self, prompt: Any, output_structure: Type[BaseModel] | None = None) -> str | BaseModel | None:
         if MOCKING_MODE:
             return "YES"
-        if not self.is_available() or self.generation_model is None:
+        if self.generation_model is None:
             print("LLMService generation model not available.")
             return "ERROR" if output_structure is None else None
 
