@@ -187,8 +187,9 @@ def run_one_dataset(
             keyphrase_prompt_template=prompts["kp"],
             keyphrase_output_csv_path=os.path.join(output_dir, "keyphrase_expansions_output.csv"),
         )
-        # Report best variant (weighted_1.0 most closely matches the paper)
-        for variant in ["weighted_1.0", "average", "concatenated"]:
+        # Paper (Viswanathan et al. 2023, §2.1) uses concatenation of the
+        # keyphrase embedding with the original document embedding.
+        for variant in ["concatenated", "average", "weighted_1.0"]:
             if kp_results.get(variant) is not None:
                 metrics = calculate_clustering_metrics(labels, kp_results[variant], n_clusters)
                 results.append({

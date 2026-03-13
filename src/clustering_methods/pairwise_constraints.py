@@ -15,6 +15,54 @@ import os
 METRICS_CSV_PATH = "clustering_metrics_results.csv"
 
 
+def _repair_constraints(
+    must_links: List[Tuple[int, int]],
+    cannot_links: List[Tuple[int, int]],
+) -> Tuple[List[Tuple[int, int]], List[Tuple[int, int]]]:
+    """Return a consistent (must_links, cannot_links) pair.
+
+    PCKMeans raises an error when a cannot-link connects two nodes that are
+    transitively joined by must-links (e.g. A-ML-B, B-ML-C, A-CL-C).
+    This function:
+      1. Removes direct contradictions (same pair in both lists).
+      2. Builds must-link connected components via union-find.
+      3. Drops any cannot-link whose endpoints share a component.
+    """
+    must_set   = set(map(tuple, must_links))
+    cannot_set = set(map(tuple, cannot_links))
+
+    # 1. Remove direct contradictions
+    direct = must_set & cannot_set
+    if direct:
+        print(f"  Dropping {len(direct)} directly contradictory pair(s).")
+        must_set   -= direct
+        cannot_set -= direct
+
+    # 2. Union-find over must-link graph
+    parent: Dict[int, int] = {}
+
+    def find(x: int) -> int:
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: int, b: int) -> None:
+        parent[find(a)] = find(b)
+
+    for a, b in must_set:
+        union(a, b)
+
+    # 3. Drop cannot-links that connect same must-link component
+    invalid = {p for p in cannot_set if find(p[0]) == find(p[1])}
+    if invalid:
+        print(f"  Dropping {len(invalid)} transitively inconsistent cannot-link(s).")
+        cannot_set -= invalid
+
+    return list(must_set), list(cannot_set)
+
+
 def process_pair(pair_data: Tuple[int, int, str, str, ChatPromptTemplate, LLMService]) -> Dict[str, Any]:
     idx1, idx2, doc1, doc2, template, llm = pair_data
     prompt = template.format(text1=doc1, text2=doc2)
@@ -124,22 +172,12 @@ def cluster_via_pairwise_constraints(
     if query_data:
         pd.DataFrame(query_data).to_csv(output_path, index=False)
 
-    # Drop contradictory pairs (same pair in both must- and cannot-links) before
-    # calling PCKMeans — contradictions cause it to raise an inconsistency error.
-    must_set   = set(map(tuple, must_links))
-    cannot_set = set(map(tuple, cannot_links))
-    contradictions = must_set & cannot_set
-    if contradictions:
-        print(f"  Dropping {len(contradictions)} contradictory constraint pair(s).")
-        must_set   -= contradictions
-        cannot_set -= contradictions
-    must_links   = list(must_set)
-    cannot_links = list(cannot_set)
+    must_links, cannot_links = _repair_constraints(must_links, cannot_links)
 
     assignments = None
     if must_links or cannot_links:
+        features_norm = normalize(features)
         try:
-            features_norm = normalize(features)
             pckmeans = PCKMeans(n_clusters=n_clusters)
             pckmeans.fit(features_norm, ml=must_links, cl=cannot_links)
             assignments = pckmeans.labels_
