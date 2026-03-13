@@ -13,6 +13,9 @@ from pydantic import BaseModel, Field
 class KeyphraseList(BaseModel):
     keyphrases: List[str] = Field(description="A list of keyphrases.")
 
+class ParaphraseList(BaseModel):
+    paraphrases: List[str] = Field(description="A list of paraphrases.")
+
 
 class SentenceTransformerEmbeddings(Embeddings):
     """

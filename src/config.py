@@ -289,33 +289,73 @@ Respond ONLY with YES or NO.
 """
 
 # ---------------------------------------------------------------------------
+# BANK77 — normalization + paraphrase
+# ---------------------------------------------------------------------------
+BANK77_NORM_PROMPT_TEMPLATE = """Rewrite the following banking query in clean, canonical form.
+Use standard financial terminology. Remove filler words, slang, and informal language.
+Be concise (5-15 words). Output ONLY the rewritten text, nothing else.
+
+Query: {text}"""
+
+BANK77_PARAPHRASE_PROMPT_TEMPLATE = """Generate 3 paraphrases of the following banking query.
+Each paraphrase should express the same intent using different wording.
+Output as a JSON list of strings.
+
+Query: {text}"""
+
+# ---------------------------------------------------------------------------
+# CLINC — normalization + paraphrase
+# ---------------------------------------------------------------------------
+CLINC_NORM_PROMPT_TEMPLATE = """Rewrite the following conversational assistant utterance in clean, canonical form.
+Remove filler words and informal language while preserving the core intent.
+Be concise (5-15 words). Output ONLY the rewritten text, nothing else.
+
+Utterance: {text}"""
+
+CLINC_PARAPHRASE_PROMPT_TEMPLATE = """Generate 3 paraphrases of the following utterance.
+Each paraphrase should express the same intent using different wording.
+Output as a JSON list of strings.
+
+Utterance: {text}"""
+
+# ---------------------------------------------------------------------------
+# TWEET — normalization + paraphrase
+# ---------------------------------------------------------------------------
+TWEET_NORM_PROMPT_TEMPLATE = """Rewrite the following tweet in clean, canonical form.
+Remove hashtags, emojis, slang, and informal language. Preserve the core topic using formal vocabulary.
+Be concise (5-15 words). Output ONLY the rewritten text, nothing else.
+
+Tweet: {text}"""
+
+TWEET_PARAPHRASE_PROMPT_TEMPLATE = """Generate 3 paraphrases of the following tweet.
+Each paraphrase should describe the same topic using different wording (no hashtags or emojis).
+Output as a JSON list of strings.
+
+Tweet: {text}"""
+
+# ---------------------------------------------------------------------------
 # Routing: maps dataset name → its prompt dict
 # ---------------------------------------------------------------------------
 DATASET_PROMPTS = {
     "bank77": {
-        "kp":         BANK77_KP_PROMPT_TEMPLATE,
-        "pc":         BANK77_PC_PROMPT_TEMPLATE,
-        "correction": BANK77_CORRECTION_PROMPT_TEMPLATE,
+        "kp":            BANK77_KP_PROMPT_TEMPLATE,
+        "pc":            BANK77_PC_PROMPT_TEMPLATE,
+        "correction":    BANK77_CORRECTION_PROMPT_TEMPLATE,
+        "normalization": BANK77_NORM_PROMPT_TEMPLATE,
+        "paraphrase":    BANK77_PARAPHRASE_PROMPT_TEMPLATE,
     },
     "clinc": {
-        "kp":         CLINC_KP_PROMPT_TEMPLATE,
-        "pc":         CLINC_PC_PROMPT_TEMPLATE,
-        "correction": CLINC_CORRECTION_PROMPT_TEMPLATE,
+        "kp":            CLINC_KP_PROMPT_TEMPLATE,
+        "pc":            CLINC_PC_PROMPT_TEMPLATE,
+        "correction":    CLINC_CORRECTION_PROMPT_TEMPLATE,
+        "normalization": CLINC_NORM_PROMPT_TEMPLATE,
+        "paraphrase":    CLINC_PARAPHRASE_PROMPT_TEMPLATE,
     },
     "tweet": {
-        "kp":         TWEET_KP_PROMPT_TEMPLATE,
-        "pc":         TWEET_PC_PROMPT_TEMPLATE,
-        "correction": TWEET_CORRECTION_PROMPT_TEMPLATE,
+        "kp":            TWEET_KP_PROMPT_TEMPLATE,
+        "pc":            TWEET_PC_PROMPT_TEMPLATE,
+        "correction":    TWEET_CORRECTION_PROMPT_TEMPLATE,
+        "normalization": TWEET_NORM_PROMPT_TEMPLATE,
+        "paraphrase":    TWEET_PARAPHRASE_PROMPT_TEMPLATE,
     },
 }
-
-# ---------------------------------------------------------------------------
-# Legacy aliases — kept so any older code that imports these still works
-# ---------------------------------------------------------------------------
-KP_PROMPT_TEMPLATE = CLINC_KP_PROMPT_TEMPLATE
-PC_PROMPT_TEMPLATE = CLINC_PC_PROMPT_TEMPLATE
-CORRECTION_PROMPT_TEMPLATE = CLINC_CORRECTION_PROMPT_TEMPLATE
-INTENT_KP_PROMPT_TEMPLATE = KP_PROMPT_TEMPLATE
-INTENT_PC_PROMPT_TEMPLATE = PC_PROMPT_TEMPLATE
-INTENT_CORRECTION_PROMPT_TEMPLATE = CORRECTION_PROMPT_TEMPLATE
-DATASET_PROMPT_MODE = {k: "intent" for k in DATASET_PROMPTS}

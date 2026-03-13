@@ -40,10 +40,12 @@ from src.metrics import calculate_clustering_metrics
 from src.clustering_methods.pairwise_constraints import cluster_via_pairwise_constraints
 from src.clustering_methods.clustering_correction import cluster_via_correction
 from src.clustering_methods.keyphrase_expansion import cluster_via_keyphrase_expansion
+from src.clustering_methods.llm_normalization import cluster_via_llm_normalization
+from src.clustering_methods.llm_paraphrase import cluster_via_llm_paraphrase
 
 RESULTS_PATH = os.path.join(RESULTS_ROOT, "experiment_results_table.csv")
 ALL_DATASETS = ["bank77", "clinc", "tweet"]
-ALL_METHODS  = ["kmeans", "jose", "pairwise", "correction", "keyphrase"]
+ALL_METHODS  = ["kmeans", "jose", "pairwise", "correction", "keyphrase", "normalization", "paraphrase"]
 
 
 def _get_prompts(dataset_name: str) -> dict:
@@ -83,7 +85,7 @@ def run_one_dataset(
     # Method 1: K-Means baseline                                          #
     # ------------------------------------------------------------------ #
     if "kmeans" in methods:
-        print("\n[1/5] K-Means (all-mpnet-base-v2)")
+        print("\n[1/7] K-Means (all-mpnet-base-v2)")
         assignments = run_naive_kmeans(features, n_clusters)
         metrics = calculate_clustering_metrics(labels, assignments, n_clusters)
         results.append({
@@ -97,7 +99,7 @@ def run_one_dataset(
     # Method 2: JoSE + Spherical K-Means                                 #
     # ------------------------------------------------------------------ #
     if "jose" in methods:
-        print("\n[2/5] JoSE + Spherical K-Means (Word2Vec from scratch)")
+        print("\n[2/7] JoSE + Spherical K-Means (Word2Vec from scratch)")
         jose = JoSEEmbeddings(
             vector_size=100, window=5, min_count=1, epochs=10, seed=42
         )
@@ -123,7 +125,7 @@ def run_one_dataset(
     # Method 3: PCKMeans (pairwise constraints)                           #
     # ------------------------------------------------------------------ #
     if "pairwise" in methods:
-        print("\n[3/5] PCKMeans (pairwise constraints via LLM)")
+        print("\n[3/7] PCKMeans (pairwise constraints via LLM)")
         assignments = cluster_via_pairwise_constraints(
             dataset_name=dataset_name,
             documents=docs,
@@ -151,7 +153,7 @@ def run_one_dataset(
     # Method 4: LLM Correction                                           #
     # ------------------------------------------------------------------ #
     if "correction" in methods:
-        print("\n[4/5] LLM Correction")
+        print("\n[4/7] LLM Correction")
         initial = run_naive_kmeans(features, n_clusters)
         assignments = cluster_via_correction(
             dataset_name=dataset_name,
@@ -178,7 +180,7 @@ def run_one_dataset(
     # Method 5: Keyphrase Clustering                                      #
     # ------------------------------------------------------------------ #
     if "keyphrase" in methods:
-        print("\n[5/5] Keyphrase Clustering (LLM expansion + K-Means)")
+        print("\n[5/7] Keyphrase Clustering (LLM expansion + K-Means)")
         kp_results = cluster_via_keyphrase_expansion(
             documents=docs,
             features=features,
@@ -199,6 +201,50 @@ def run_one_dataset(
                 })
                 _print_metrics(metrics, label=f"  variant={variant}")
                 break  # only report the best available variant
+
+    # ------------------------------------------------------------------ #
+    # Method 6: LLM Normalization                                         #
+    # ------------------------------------------------------------------ #
+    if "normalization" in methods:
+        print("\n[6/7] LLM Normalization (canonical rewriting + K-Means)")
+        assignments = cluster_via_llm_normalization(
+            documents=docs,
+            features=features,
+            n_clusters=n_clusters,
+            llm_service=llm_service,
+            prompt_template=prompts["normalization"],
+            output_path=os.path.join(output_dir, "normalization_output.csv"),
+            output_dir=output_dir,
+        )
+        metrics = calculate_clustering_metrics(labels, assignments, n_clusters) if assignments is not None else {}
+        results.append({
+            "Dataset": dataset_name,
+            "Method": "LLM Normalization",
+            **_fmt_metrics(metrics),
+        })
+        _print_metrics(metrics)
+
+    # ------------------------------------------------------------------ #
+    # Method 7: LLM Paraphrase Ensemble                                   #
+    # ------------------------------------------------------------------ #
+    if "paraphrase" in methods:
+        print("\n[7/7] LLM Paraphrase Ensemble (mean-pooled + K-Means)")
+        assignments = cluster_via_llm_paraphrase(
+            documents=docs,
+            features=features,
+            n_clusters=n_clusters,
+            llm_service=llm_service,
+            prompt_template=prompts["paraphrase"],
+            output_path=os.path.join(output_dir, "paraphrase_output.csv"),
+            output_dir=output_dir,
+        )
+        metrics = calculate_clustering_metrics(labels, assignments, n_clusters) if assignments is not None else {}
+        results.append({
+            "Dataset": dataset_name,
+            "Method": "LLM Paraphrase Ensemble",
+            **_fmt_metrics(metrics),
+        })
+        _print_metrics(metrics)
 
     return results
 

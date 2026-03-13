@@ -28,7 +28,13 @@ correction:
 keyphrase:
 	python -m main.run_experiments --datasets $(DATASETS) --methods keyphrase
 
+normalization:
+	python -m main.run_experiments --datasets $(DATASETS) --methods normalization
+
+paraphrase:
+	python -m main.run_experiments --datasets $(DATASETS) --methods paraphrase
+
 smoke:
 	python smoke_test.py
 
-.PHONY: run bank77 clinc tweet kmeans jose pairwise correction keyphrase smoke
+.PHONY: run bank77 clinc tweet kmeans jose pairwise correction keyphrase normalization paraphrase smoke

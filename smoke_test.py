@@ -74,8 +74,9 @@ class MockLLMService:
     """
 
     def __init__(self, embedder, docs: list, labels: np.ndarray):
-        from src.llm_service import KeyphraseList
+        from src.llm_service import KeyphraseList, ParaphraseList
         self._KeyphraseList = KeyphraseList
+        self._ParaphraseList = ParaphraseList
         self.embedding_model = embedder
         # Non-None sentinel so is_available() is True
         self.generation_model = object()
@@ -104,15 +105,31 @@ class MockLLMService:
 
     # ── Generation (stubbed) ──────────────────────────────────────────────────
     def get_chat_completion(self, prompt, output_structure=None):
+        import re
+
+        if output_structure is self._ParaphraseList:
+            m = re.search(r'(?:Query|Utterance|Tweet):\s*(.+)', prompt)
+            text = m.group(1).strip() if m else "mock text"
+            return self._ParaphraseList(paraphrases=[
+                text + " (rephrased)",
+                text + " (alternative)",
+                text + " (variant)",
+            ])
+
         if output_structure is self._KeyphraseList:
             return self._KeyphraseList(keyphrases=[
                 "mock keyphrase alpha",
                 "mock keyphrase beta",
                 "mock keyphrase gamma",
             ])
+
+        # Normalization: plain string output, prompt mentions "canonical form"
+        if output_structure is None and "canonical form" in prompt:
+            m = re.search(r'(?:Query|Utterance|Tweet):\s*(.+)', prompt)
+            return m.group(1).strip().lower() if m else "normalized text"
+
         # For pairwise and correction: look up the last two labelled texts in the
         # prompt (last occurrence avoids matching the few-shot example lines).
-        import re
         # Pairwise patterns: "Query 1:", "Utterance 1:", "Tweet 1:"
         m1_all = re.findall(r'(?:Query|Utterance|Tweet) 1:\s*(.+)', prompt)
         m2_all = re.findall(r'(?:Query|Utterance|Tweet) 2:\s*(.+)', prompt)
@@ -279,16 +296,60 @@ def main():
         traceback.print_exc()
         results["keyphrase"] = False
 
+    # ── 7. LLM Normalization ──────────────────────────────────────────────────
+    print("\n[6/7] LLM Normalization (mock LLM)")
+    try:
+        from src.clustering_methods.llm_normalization import cluster_via_llm_normalization
+        from src.config import BANK77_NORM_PROMPT_TEMPLATE
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assignments = cluster_via_llm_normalization(
+                documents=DOCS,
+                features=features,
+                n_clusters=N_CLUSTERS,
+                llm_service=llm,
+                prompt_template=BANK77_NORM_PROMPT_TEMPLATE,
+                output_path=os.path.join(tmpdir, "norm_out.csv"),
+                output_dir=tmpdir,
+            )
+        results["normalization"] = _check(assignments, "LLM Normalization")
+    except Exception:
+        print(f"  [{FAIL}] LLM Normalization raised an exception:")
+        traceback.print_exc()
+        results["normalization"] = False
+
+    # ── 8. LLM Paraphrase Ensemble ────────────────────────────────────────────
+    print("\n[7/7] LLM Paraphrase Ensemble (mock LLM)")
+    try:
+        from src.clustering_methods.llm_paraphrase import cluster_via_llm_paraphrase
+        from src.config import BANK77_PARAPHRASE_PROMPT_TEMPLATE
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assignments = cluster_via_llm_paraphrase(
+                documents=DOCS,
+                features=features,
+                n_clusters=N_CLUSTERS,
+                llm_service=llm,
+                prompt_template=BANK77_PARAPHRASE_PROMPT_TEMPLATE,
+                output_path=os.path.join(tmpdir, "paraphrase_out.csv"),
+                output_dir=tmpdir,
+            )
+        results["paraphrase"] = _check(assignments, "LLM Paraphrase Ensemble")
+    except Exception:
+        print(f"  [{FAIL}] LLM Paraphrase raised an exception:")
+        traceback.print_exc()
+        results["paraphrase"] = False
+
     # ── Summary ───────────────────────────────────────────────────────────────
     print("\n" + "=" * 60)
     print("  Summary")
     print("=" * 60)
     names = {
-        "kmeans":    "K-Means baseline",
-        "jose":      "JoSE + Spherical K-Means",
-        "pairwise":  "PCKMeans",
-        "correction":"LLM Correction",
-        "keyphrase": "Keyphrase Expansion",
+        "kmeans":        "K-Means baseline",
+        "jose":          "JoSE + Spherical K-Means",
+        "pairwise":      "PCKMeans",
+        "correction":    "LLM Correction",
+        "keyphrase":     "Keyphrase Expansion",
+        "normalization": "LLM Normalization",
+        "paraphrase":    "LLM Paraphrase Ensemble",
     }
     all_pass = True
     for key, label in names.items():
