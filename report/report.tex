@@ -98,7 +98,7 @@
     mean-pools embeddings across LLM-generated paraphrases to smooth surface
     variance.
     We further analyse the LLM oracle's empirical accuracy as a same-cluster
-    predictor (precision\,0.73, specificity\,0.96 on Bank77 pairwise queries)
+    predictor (precision\,0.72, specificity\,0.96 on Bank77 pairwise queries)
     and visualise the geometric effect of each method on the embedding manifold.
     Across eight methods evaluated on three benchmarks we find that
     per-document LLM methods (Keyphrase, Normalization, Paraphrase) consistently
@@ -117,12 +117,12 @@
 \label{sec:intro}
 % ══════════════════════════════════════════════════════════════════════════════
 
-Text clustering is fundamental to many NLP pipelines---from intent discovery in
+Text clustering is central to many NLP pipelines, from intent discovery in
 dialogue systems to topic organisation in social media analysis.
 Traditional approaches embed documents with a pre-trained encoder and apply
-K-Means, but raw embeddings capture surface similarity and may merge
-semantically distinct intents that share vocabulary, or separate paraphrases
-that share intent.
+K-Means, but raw embeddings capture surface similarity and can merge
+semantically distinct intents that share vocabulary, or split paraphrases
+that share the same intent.
 The problem is especially pronounced in \emph{short-text} domains such as
 conversational intent detection (Bank77, CLINC) and social media posts (Tweet),
 where individual utterances contain only a handful of content words and
@@ -166,7 +166,7 @@ We address both questions through targeted visualisations on Bank77.
 
 Standard K-Means minimises within-cluster sum of squared Euclidean distances.
 Applied to L2-normalised embeddings it is equivalent to maximising average
-cosine similarity within clusters---a natural objective for unit-sphere
+cosine similarity within clusters, a natural objective for unit-sphere
 representations such as those produced by sentence transformers
 \citep{reimers2019sentence}.
 We use \texttt{n\_init=auto} and \texttt{random\_state=0} throughout for
@@ -258,9 +258,11 @@ The cleaned constraints are passed to PCKMeans \citep{basu2004active}.
 Figure~\ref{fig:constraints} visualises a sample of the constraints on Bank77.
 Green must-link edges connect documents the LLM judged equivalent; red
 cannot-link edges span clearly distinct intents.
-The geometric structure is striking: must-links bridge nearby clusters in
-embedding space, while cannot-links cross wide gaps---exactly the
-semi-supervised signal PCKMeans needs.
+Most must-links bridge nearby clusters in embedding space, while cannot-links
+cross wide gaps between distinct intents, providing the semi-supervised
+signal PCKMeans relies on.
+A small number of long-range must-link edges reflect oracle errors
+(precision 0.72; see \S\ref{sec:oracle}).
 
 \begin{figure*}[t]
 \centering
@@ -270,8 +272,8 @@ semi-supervised signal PCKMeans needs.
   \fbox{\parbox{0.88\textwidth}{\centering\small fig5 not yet generated.}}%
 }
 \caption{LLM-generated pairwise constraints on the Bank77 t-SNE.
-  \textbf{Green} = must-link YES pairs ($n{=}198$);
-  \textbf{red} = cannot-link NO pairs (300 of 1\,802 sampled).
+  \textbf{Green} edges are must-link (YES) pairs;
+  \textbf{red} edges are cannot-link (NO) pairs.
   Must-links bridge nearby clusters; cannot-links span inter-cluster voids.}
 \label{fig:constraints}
 \end{figure*}
@@ -300,7 +302,7 @@ $\approx$3\,080 for Bank77) but requires no inter-document comparisons.
 \subsection{\textbf{LLM Semantic Normalization} \textnormal{(Novel)}}
 \label{sec:normalization}
 
-Surface heterogeneity---abbreviations, slang, domain jargon---degrades
+Surface heterogeneity (abbreviations, slang, domain jargon) degrades
 clustering by placing paraphrases far apart in embedding space.
 We prompt the LLM to rewrite each document in a \emph{clean canonical form}
 (removing filler words, standardising terminology) with a domain-specific
@@ -338,7 +340,7 @@ hints from the triplet answers to inform Stage~2.
 A Ward hierarchical dendrogram is constructed from the L2-normalised
 embeddings.
 Up to $n_{\mathrm{pairwise}}{=}400$ pairs are sampled proportionally from
-dendrogram merge events---preferring larger merges that are most informative
+dendrogram merge events, preferring larger merges that are most informative
 for $k$ selection.
 For each candidate $k$ in $[\lfloor k_{\max}/4 \rfloor,\; 3k_{\max}]$:
 \begin{equation}
@@ -445,7 +447,7 @@ baseline, suggesting that tweets are already topically compact enough that
 surface-form smoothing provides no additional separability signal.
 Notably, PCKMeans falls below KMeans on CLINC (0.673 vs.\ 0.777) and Tweet
 (0.569 vs.\ 0.649); ClusterLLM returns the lowest ACC on all datasets
-(0.474--0.540) while maintaining competitive NMI---both patterns are examined
+(0.474--0.540) while maintaining competitive NMI; both patterns are examined
 in \S\ref{sec:analysis}.
 Figure~\ref{fig:tsne} provides a geometric view of the clustering quality on
 Bank77: the left panel shows the ground-truth intent structure in the
@@ -528,8 +530,8 @@ Keyphrase, Normalization, and Paraphrase each issue one call per document,
 scaling linearly with corpus size, and thus dominate total token expenditure.
 PCKMeans issues a fixed 2\,000 calls but sends long two-document prompts,
 resulting in the highest input-token count per dataset.
-ClusterLLM requires only $\approx\!1\,424$ calls per dataset---the lowest budget
-among multi-document LLM methods---while additionally removing the requirement
+ClusterLLM requires only $\approx\!1\,424$ calls per dataset, the lowest budget
+among multi-document LLM methods, and additionally removes the requirement
 for a known $k$.
 
 Token counts were estimated offline using the \textsc{tiktoken} tokeniser
@@ -602,13 +604,13 @@ Bank77 pairwise queries.
   \emph{Top}: annotated 2$\times$2 confusion matrix (LLM answer vs ground-truth
   same/different class).
   \emph{Bottom}: derived precision, recall, F1, and specificity.
-  The oracle achieves high precision on YES predictions (TP rate\,$\approx$\,0.73)
+  The oracle achieves high precision on YES predictions (TP rate\,$\approx$\,0.72)
   and very high specificity on NO predictions (0.96), meaning almost all
   cannot-links correctly span different-class pairs.}
 \label{fig:oracle}
 \end{figure}
 
-The oracle achieves precision\,$0.73$, recall\,$0.25$, and specificity\,$0.96$.
+The oracle achieves precision\,$0.72$, recall\,$0.24$, and specificity\,$0.96$.
 The low recall reflects the deliberate similarity-based sampling strategy:
 most YES-sampled pairs come from $k$-NN neighbourhoods where even different
 intents can appear close in embedding space, making same-intent identification
@@ -616,9 +618,9 @@ harder.
 The high precision and specificity indicate that when the LLM does say YES
 it is right nearly three-quarters of the time, and when it says NO (the
 majority of calls) it almost never falsely rejects a genuine same-class pair.
-This asymmetric accuracy profile---conservative YES, reliable NO---is exactly
-the regime where PCKMeans performs well: cannot-links that are wrong would
-destroy cluster integrity, while missing some must-links is recoverable.
+This asymmetric profile (conservative YES, reliable NO) is well-suited for
+PCKMeans: a wrong cannot-link destroys cluster integrity, while a missed
+must-link is recoverable.
 
 \subsection{Embedding Geometry}
 
@@ -652,7 +654,7 @@ methods are designed to resolve.
 \texttt{all-mpnet-base-v2} is a strong starting point: K-Means achieves
 ACC\,0.591\,/\,0.777\,/\,0.649 on Bank77, CLINC, and Tweet respectively,
 with mean per-class recall of 0.64 on the fine-grained Bank77.
-Not all LLM-guided methods improve on this---PCKMeans and ClusterLLM both fall
+Not all LLM-guided methods improve on this: PCKMeans and ClusterLLM both fall
 below KMeans ACC on CLINC and Tweet.
 Methods that consistently match or beat the baseline are those operating
 per-document (Keyphrase, Normalization, Paraphrase), which cannot introduce
@@ -671,10 +673,10 @@ Our similarity-first PCKMeans provides a small ACC gain on Bank77
 (0.608 vs.\ 0.591) but falls below the K-Means baseline on CLINC
 (0.673 vs.\ 0.777) and Tweet (0.569 vs.\ 0.649).
 With 89--150 intent classes, $k$-NN sampling disproportionately draws pairs
-from tight inter-class boundaries---regions where different intents appear
-close in embedding space---injecting noisy cannot-links that fragment
+from tight inter-class boundaries (regions where different intents appear
+close in embedding space), injecting noisy cannot-links that fragment
 otherwise-coherent clusters.
-The oracle's precision (0.73) is insufficient to suppress this noise at fine
+The oracle's precision (0.72) is insufficient to suppress this noise at fine
 granularities.
 The original Explore-Consolidate algorithm \citep{basu2004active} is designed
 to mitigate this by selecting pairs through an online oracle loop, but its
@@ -693,15 +695,14 @@ introduce constraint noise, and at \$0.004--\$0.007 per dataset it is the
 cheapest LLM augmentation available.
 
 \paragraph{LLM Semantic Normalization}
-Contrary to initial expectation, \textbf{LLM Normalization} achieves its
-largest gains on Bank77 (ACC\,0.649, best overall) and CLINC
-(NMI\,0.922, tied best), while on Tweet it falls marginally below the
-K-Means baseline (0.640 vs.\ 0.649).
+\textbf{LLM Normalization} achieves its largest gains on Bank77
+(ACC\,0.649, best overall) and CLINC (NMI\,0.922, tied best), while on
+Tweet it falls just below the K-Means baseline (0.640 vs.\ 0.649).
 Figure~\ref{fig:drift} shows that normalised documents shift consistently
 within their local neighbourhood; the rewriting resolves domain-specific
 surface variations (e.g., ``transfer funds'' $\to$ ``send money'') that
 confuse even the well-trained \texttt{mpnet} encoder.
-On Tweet, topical diversity---not surface noise---is the primary clustering
+On Tweet, topical diversity (not surface noise) is the primary clustering
 challenge, and canonical rewriting does not alter topical semantics.
 
 \begin{figure}[htbp]
@@ -721,11 +722,11 @@ challenge, and canonical rewriting does not alter topical semantics.
 \end{figure}
 
 \paragraph{LLM Paraphrase Ensemble}
-Figure~\ref{fig:paraphrase} confirms that three LLM-generated paraphrases of
-the same document cluster tightly around a stable semantic centroid.
+Figure~\ref{fig:paraphrase} shows that three LLM-generated paraphrases of
+the same document cluster tightly around a shared semantic region.
 \textbf{LLM Paraphrase Ensemble} achieves the best CLINC ACC (0.787) and
-best Bank77 NMI (0.819), validating the noise-reduction effect of ensemble
-averaging.
+best Bank77 NMI (0.819), confirming that ensemble averaging reduces
+surface-form variance.
 On Tweet the method underperforms the baseline (0.621 vs.\ 0.649): paraphrases
 of short stylised tweets may diverge in topic rather than merely surface form,
 introducing variance rather than reducing it.
@@ -752,10 +753,10 @@ pairwise precision (0.886\,/\,0.945\,/\,0.942).
 This divergence arises from the granularity selection: the recall-biased
 F-$\beta$ objective ($\beta{=}5$) prefers finer partitions, causing $k^*$ to
 exceed the true $k$.
-The resulting over-split clusters are internally pure---hence high precision
-and NMI---but smaller than Hungarian matching expects, depressing ACC.
+The resulting over-split clusters are internally pure (hence the high precision
+and NMI), but smaller than Hungarian matching expects, which depresses ACC.
 As shown in Figure~\ref{fig:granularity} (§\ref{sec:clusterllm}), the F-$\beta$
-curve peaks at $k^*{=}223$ for Bank77---well above the true $k{=}77$.
+curve peaks at $k^*{=}223$ for Bank77, well above the true $k{=}77$.
 This is not a fundamental failure: in a practical setting where the true $k$
 is unknown, a coherent over-split is preferable to an incoherent merge, and
 adjusting $\beta$ toward precision-bias would trade NMI for ACC as needed.
@@ -771,9 +772,8 @@ recovers $k$ automatically.
 Paraphrase is the most expensive per dataset (\$0.074--\$0.093) due to
 generating three alternatives per document: 130K output tokens on Bank77
 alone.
-Across both datasets the entire experimental pipeline costs under \$0.47,
-illustrating that LLM-augmented clustering is economically viable even on
-modest hardware budgets.
+Across both datasets the full pipeline costs under \$0.47 total,
+showing that LLM-augmented clustering is affordable even on a student budget.
 
 \begin{figure}[htbp]
 \centering
@@ -800,18 +800,18 @@ novel methods: \textbf{LLM Semantic Normalization} and \textbf{LLM Paraphrase
 Ensemble}.
 Both novel methods outperform all baselines on Bank77 and CLINC, with LLM
 Normalization achieving ACC\,0.649 on Bank77 and LLM Paraphrase Ensemble
-reaching ACC\,0.787 on CLINC---the best results across both datasets.
+reaching ACC\,0.787 on CLINC, the best results across both datasets.
 
 Empirical analysis of the oracle on Bank77 reveals a highly reliable NO
 signal (specificity\,$0.96$) and a conservative but precise YES signal
-(precision\,$0.73$), which is the right profile for constraint-based
+(precision\,$0.72$), which is the right profile for constraint-based
 clustering methods.
 Geometric visualisations confirm that normalisation contracts intra-cluster
 spread rather than disrupting inter-cluster boundaries, and that paraphrase
 ensemble averaging converges to a stable semantic centroid within intent
 classes.
-The K-Means confusion heatmap identifies specific families of easily confused
-intents, pinpointing where LLM oracle effort is best spent.
+The K-Means confusion heatmap highlights specific families of easily confused
+intents and shows where LLM oracle effort is best directed.
 
 Results reveal that LLM guidance does not uniformly help: PCKMeans degrades on
 fine-grained corpora (CLINC, Tweet) due to constraint noise from dense
@@ -821,7 +821,7 @@ ClusterLLM's granularity selection consistently over-splits when optimised for
 recall ($\beta{=}5$), yielding high-purity sub-clusters that trade ACC for NMI;
 calibrating $\beta$ to match application requirements is an open practical
 question.
-Future work could combine LLM Normalization with PCKMeans constraints---the
+Future work could combine LLM Normalization with PCKMeans constraints: the
 geometric analysis suggests that normalisation would reduce constraint noise by
 pulling near-boundary paraphrases into their correct cluster before pairwise
 queries are issued.

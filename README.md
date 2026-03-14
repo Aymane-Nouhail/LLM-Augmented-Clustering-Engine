@@ -1,6 +1,6 @@
 # LLM-Augmented Clustering Engine
 
-> A systematic evaluation of large language model–guided short-text clustering across eight methods on three intent-detection benchmarks.
+> Evaluating LLM-guided short-text clustering across eight methods on three intent-detection benchmarks.
 
 This project replicates and extends the few-shot clustering framework of Viswanathan et al. [1], integrating GPT-4.1-nano as a zero-cost oracle across six LLM-augmented clustering strategies. All experiments are run on Bank77 [2], CLINC150 [3], and TweetTopics [4] using `all-mpnet-base-v2` sentence embeddings [5].
 
@@ -15,7 +15,7 @@ This project replicates and extends the few-shot clustering framework of Viswana
 
 Short-text intent clustering is a fundamental NLP task in dialogue systems, search, and customer-support triage. Dense sentence encoders produce geometrically coherent latent spaces, yet K-Means on raw embeddings still conflates semantically adjacent intents. Recent work has shown that querying an LLM as a pairwise oracle, canonicaliser, or paraphrase generator can substantially close this gap without requiring labelled data [1, 6].
 
-This codebase provides a reproducible, end-to-end implementation of eight clustering methods—from a vanilla K-Means baseline to the full ClusterLLM pipeline [6]—with automatic caching of every LLM call, per-method cost tracking, and a suite of nine diagnostic figures.
+This codebase provides a reproducible, end-to-end implementation of eight clustering methods (from a vanilla K-Means baseline to the full ClusterLLM pipeline [6]), with automatic caching of every LLM call, per-method cost tracking, and nine diagnostic figures.
 
 ---
 

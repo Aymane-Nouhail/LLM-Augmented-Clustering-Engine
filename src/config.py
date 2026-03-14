@@ -23,8 +23,8 @@ GENERATION_MODEL_NAME = "gpt-4.1-nano"
 MOCKING_MODE = False
 
 # --- Clustering Parameters ---
-PC_NUM_PAIRS_TO_QUERY = 20000
-PC_CONSTRAINT_SELECTION_STRATEGY = "explore_consolidate"  # 'random', 'similarity', or 'explore_consolidate'
+PC_NUM_PAIRS_TO_QUERY = 2000
+PC_CONSTRAINT_SELECTION_STRATEGY = "similarity"  # 'random', 'similarity', or 'explore_consolidate'
 
 CORRECTION_K_LOW_CONFIDENCE = 100
 CORRECTION_NUM_CANDIDATE_CLUSTERS = 3
