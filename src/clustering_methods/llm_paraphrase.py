@@ -18,8 +18,14 @@ def _process_doc(
     """Query LLM for paraphrases of a document."""
     try:
         prompt = prompt_template.format(text=document)
-        response = llm_service.get_chat_completion(prompt, output_structure=ParaphraseList)
-        paraphrases = response.paraphrases if response and hasattr(response, "paraphrases") else []
+        response = llm_service.get_chat_completion(
+            prompt, output_structure=ParaphraseList
+        )
+        paraphrases = (
+            response.paraphrases
+            if response and hasattr(response, "paraphrases")
+            else []
+        )
         return (doc_index, document, paraphrases)
     except Exception:
         return (doc_index, document, [])
@@ -75,7 +81,9 @@ def cluster_via_llm_paraphrase(
         try:
             with open(cache_file, "rb") as f:
                 paraphrase_map = pickle.load(f)
-            print(f"  Loaded paraphrases from cache: {cache_file} ({len(paraphrase_map)} docs)")
+            print(
+                f"  Loaded paraphrases from cache: {cache_file} ({len(paraphrase_map)} docs)"
+            )
         except Exception as e:
             print(f"  Paraphrase cache load failed: {e}. Re-querying LLM.")
             paraphrase_map = {}
@@ -85,16 +93,24 @@ def cluster_via_llm_paraphrase(
             print("  No paraphrase cache and no generation model. Cannot run.")
             return None
 
-        print(f"  Querying LLM for paraphrases ({n_samples} docs, up to {max_workers} workers)...")
+        print(
+            f"  Querying LLM for paraphrases ({n_samples} docs, up to {max_workers} workers)..."
+        )
         workers = min(max_workers, n_samples)
         raw_results: List[Optional[Tuple]] = [None] * n_samples
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {
-                executor.submit(_process_doc, i, documents[i], llm_service, prompt_template): i
+                executor.submit(
+                    _process_doc, i, documents[i], llm_service, prompt_template
+                ): i
                 for i in range(n_samples)
             }
-            for future in tqdm(concurrent.futures.as_completed(futures), total=n_samples, desc="Paraphrasing"):
+            for future in tqdm(
+                concurrent.futures.as_completed(futures),
+                total=n_samples,
+                desc="Paraphrasing",
+            ):
                 raw_results[futures[future]] = future.result()
 
         for result in raw_results:
@@ -106,11 +122,16 @@ def cluster_via_llm_paraphrase(
             pickle.dump(paraphrase_map, f)
         print(f"  Paraphrases cached to: {cache_file}")
 
-        pd.DataFrame([
-            {"document_index": i, "original": documents[i],
-             "paraphrases": " | ".join(paraphrase_map.get(i, []))}
-            for i in range(n_samples)
-        ]).to_csv(output_path, index=False)
+        pd.DataFrame(
+            [
+                {
+                    "document_index": i,
+                    "original": documents[i],
+                    "paraphrases": " | ".join(paraphrase_map.get(i, [])),
+                }
+                for i in range(n_samples)
+            ]
+        ).to_csv(output_path, index=False)
 
     print(f"  Embedding paraphrase ensembles ({n_samples} docs)...")
     workers = min(max_workers, n_samples)
@@ -120,12 +141,17 @@ def cluster_via_llm_paraphrase(
         futures = {
             executor.submit(
                 _embed_ensemble,
-                i, documents[i], paraphrase_map.get(i, []),
-                llm_service, embedding_dim,
+                i,
+                documents[i],
+                paraphrase_map.get(i, []),
+                llm_service,
+                embedding_dim,
             ): i
             for i in range(n_samples)
         }
-        for future in tqdm(concurrent.futures.as_completed(futures), total=n_samples, desc="Embedding"):
+        for future in tqdm(
+            concurrent.futures.as_completed(futures), total=n_samples, desc="Embedding"
+        ):
             embed_results[futures[future]] = future.result()
 
     ensemble_features: List[np.ndarray] = []
@@ -143,9 +169,9 @@ def cluster_via_llm_paraphrase(
         return None
 
     try:
-        clusters = KMeans(n_clusters=n_clusters, random_state=0, n_init="auto").fit_predict(
-            np.array(ensemble_features)
-        )
+        clusters = KMeans(
+            n_clusters=n_clusters, random_state=0, n_init="auto"
+        ).fit_predict(np.array(ensemble_features))
         assignments = np.full(n_samples, -1, dtype=int)
         for i, idx in enumerate(successful_indices):
             assignments[idx] = clusters[i]

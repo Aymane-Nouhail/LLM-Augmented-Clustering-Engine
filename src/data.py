@@ -9,8 +9,9 @@ from langchain_core.embeddings import Embeddings
 from datasets import load_dataset as load_dataset_hf
 
 
-def _balance_classes(docs: List[str], labels: List[int], raw_data: List[Any],
-                    max_samples: int) -> Tuple[List[str], List[int], List[Any]]:
+def _balance_classes(
+    docs: List[str], labels: List[int], raw_data: List[Any], max_samples: int
+) -> Tuple[List[str], List[int], List[Any]]:
     """Balance classes by limiting samples per class."""
     if not max_samples or not labels:
         return docs, labels, raw_data
@@ -19,7 +20,9 @@ def _balance_classes(docs: List[str], labels: List[int], raw_data: List[Any],
     indices = []
     for lbl in np.unique(labels_np):
         class_idx = np.where(labels_np == lbl)[0]
-        indices.extend(np.random.choice(class_idx, min(len(class_idx), max_samples), replace=False))
+        indices.extend(
+            np.random.choice(class_idx, min(len(class_idx), max_samples), replace=False)
+        )
     indices.sort()
 
     balanced_docs = [docs[i] for i in indices]
@@ -30,8 +33,12 @@ def _balance_classes(docs: List[str], labels: List[int], raw_data: List[Any],
     return balanced_docs, balanced_labels, balanced_raw
 
 
-def _get_embeddings(docs: List[str], cache_path: Optional[str],
-                   embedding_model: Embeddings, dataset_name: str) -> np.ndarray:
+def _get_embeddings(
+    docs: List[str],
+    cache_path: Optional[str],
+    embedding_model: Embeddings,
+    dataset_name: str,
+) -> np.ndarray:
     """Get embeddings from cache or generate and cache them.
 
     Cache location: {cache_path}/{dataset_name}/embeddings.pkl
@@ -57,7 +64,9 @@ def _get_embeddings(docs: List[str], cache_path: Optional[str],
                     print(f"  Loaded embeddings from cache: {cache_file}")
                     return cached["embeddings"]
                 else:
-                    print(f"  Cache model mismatch ({cached.get('model')} vs {model_id}), regenerating.")
+                    print(
+                        f"  Cache model mismatch ({cached.get('model')} vs {model_id}), regenerating."
+                    )
         except Exception as e:
             print(f"  Cache load failed: {e}")
 
@@ -101,6 +110,7 @@ def _load_tweet_yin_wang(path: str) -> Tuple[List[str], List[int], List[str]]:
     # Try TSV if nothing found — use pandas to handle header row correctly
     if not texts:
         import pandas as pd
+
         for fpath in sorted(glob.glob(os.path.join(path, "*.tsv"))):
             df = pd.read_csv(fpath, sep="\t")
             # Support both (text, label) and (label, text) column orders
@@ -126,8 +136,10 @@ def _load_tweet_yin_wang(path: str) -> Tuple[List[str], List[int], List[str]]:
         raise FileNotFoundError(f"No valid tweet data files found at {path}")
 
     label_map = {v: i for i, v in enumerate(sorted(set(labels_str)))}
-    labels = [label_map[l] for l in labels_str]
-    print(f"Loaded Tweet (Yin & Wang): {len(texts)} samples, {len(label_map)} categories")
+    labels = [label_map[lbl] for lbl in labels_str]
+    print(
+        f"Loaded Tweet (Yin & Wang): {len(texts)} samples, {len(label_map)} categories"
+    )
     return texts, labels, texts
 
 
@@ -139,24 +151,34 @@ def _load_clinc() -> Tuple[List[str], List[int], List[str]]:
         intents = dataset["intent"]
 
         # Filter out intent 42 (out-of-scope) and remap remaining intents
-        filtered_data = [(text, intent) for text, intent in zip(texts, intents) if intent != 42]
+        filtered_data = [
+            (text, intent) for text, intent in zip(texts, intents) if intent != 42
+        ]
         filtered_texts, filtered_intents = zip(*filtered_data)
 
-        intent_mapping = {intent: idx for idx, intent in enumerate(sorted(set(filtered_intents)))}
+        intent_mapping = {
+            intent: idx for idx, intent in enumerate(sorted(set(filtered_intents)))
+        }
         remapped_intents = [intent_mapping[intent] for intent in filtered_intents]
 
-        print(f"Loaded CLINC: {len(filtered_texts)} samples, {len(intent_mapping)} intents")
+        print(
+            f"Loaded CLINC: {len(filtered_texts)} samples, {len(intent_mapping)} intents"
+        )
         return list(filtered_texts), remapped_intents, list(filtered_texts)
     except Exception as e:
         print(f"Error loading CLINC dataset: {e}")
         return [], [], []
 
 
-def _load_hf_dataset(dataset: str, text_field: str, label_field: str,
-                    filter_func: Optional[Callable] = None) -> Tuple[List[str], List[int], List[str]]:
+def _load_hf_dataset(
+    dataset: str,
+    text_field: str,
+    label_field: str,
+    filter_func: Optional[Callable] = None,
+) -> Tuple[List[str], List[int], List[str]]:
     """Load HuggingFace dataset with optional filtering."""
     try:
-        data = load_dataset_hf(*dataset.split('/'))['test']
+        data = load_dataset_hf(*dataset.split("/"))["test"]
         texts, labels = data[text_field], data[label_field]
 
         if filter_func:
@@ -164,7 +186,7 @@ def _load_hf_dataset(dataset: str, text_field: str, label_field: str,
 
         if isinstance(labels[0], str):
             label_map = {v: i for i, v in enumerate(set(labels))}
-            labels = [label_map[l] for l in labels]
+            labels = [label_map[lbl] for lbl in labels]
 
         return list(texts), list(labels), list(texts)
     except Exception as e:
@@ -176,32 +198,36 @@ def load_dataset(
     dataset_name: str,
     cache_path: Optional[str] = None,
     embedding_model: Optional[Embeddings] = None,
-    max_samples: Optional[int] = None
+    max_samples: Optional[int] = None,
 ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
     """Load one of the supported datasets: bank77, clinc, tweet."""
     if dataset_name == "clinc":
         docs, labels, raw_data = _load_clinc()
     elif dataset_name == "tweet":
-        local_path = os.path.join(os.path.dirname(__file__), "..", "datasets", "tweet_yin_wang")
+        local_path = os.path.join(
+            os.path.dirname(__file__), "..", "datasets", "tweet_yin_wang"
+        )
         local_path = os.path.normpath(local_path)
         if os.path.exists(local_path):
             docs, labels, raw_data = _load_tweet_yin_wang(local_path)
         else:
-            print(f"WARNING: Yin & Wang (2016) 89-class tweet dataset not found at {local_path}")
+            print(
+                f"WARNING: Yin & Wang (2016) 89-class tweet dataset not found at {local_path}"
+            )
             print("  Falling back to cardiffnlp/tweet_eval/topic (20 classes).")
             print("  To get the correct dataset, run:")
-            print("    git clone --depth=1 https://github.com/viswavi/few-shot-clusteringLLM /tmp/fsc")
+            print(
+                "    git clone --depth=1 https://github.com/viswavi/few-shot-clusteringLLM /tmp/fsc"
+            )
             print("    cp -r /tmp/fsc/data/tweet datasets/tweet_yin_wang")
             docs, labels, raw_data = _load_hf_dataset(
-                dataset='cardiffnlp/tweet_eval/topic',
-                text_field='text',
-                label_field='label'
+                dataset="cardiffnlp/tweet_eval/topic",
+                text_field="text",
+                label_field="label",
             )
     elif dataset_name == "bank77":
         docs, labels, raw_data = _load_hf_dataset(
-            dataset='banking77',
-            text_field='text',
-            label_field='label'
+            dataset="banking77", text_field="text", label_field="label"
         )
     else:
         print(f"Unknown dataset: {dataset_name}. Supported: bank77, clinc, tweet")

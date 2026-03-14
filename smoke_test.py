@@ -56,7 +56,7 @@ _SPORTS = [
     "Olympics medal count by country",
 ]
 
-DOCS   = _BANKING + _WEATHER + _SPORTS
+DOCS = _BANKING + _WEATHER + _SPORTS
 LABELS = np.array([0] * 10 + [1] * 10 + [2] * 10)
 N_CLUSTERS = 3
 
@@ -75,6 +75,7 @@ class MockLLMService:
 
     def __init__(self, embedder, docs: list, labels: np.ndarray):
         from src.llm_service import KeyphraseList, ParaphraseList
+
         self._KeyphraseList = KeyphraseList
         self._ParaphraseList = ParaphraseList
         self.embedding_model = embedder
@@ -108,35 +109,55 @@ class MockLLMService:
         import re
 
         if output_structure is self._ParaphraseList:
-            m = re.search(r'(?:Query|Utterance|Tweet):\s*(.+)', prompt)
+            m = re.search(r"(?:Query|Utterance|Tweet):\s*(.+)", prompt)
             text = m.group(1).strip() if m else "mock text"
-            return self._ParaphraseList(paraphrases=[
-                text + " (rephrased)",
-                text + " (alternative)",
-                text + " (variant)",
-            ])
+            return self._ParaphraseList(
+                paraphrases=[
+                    text + " (rephrased)",
+                    text + " (alternative)",
+                    text + " (variant)",
+                ]
+            )
 
         if output_structure is self._KeyphraseList:
-            return self._KeyphraseList(keyphrases=[
-                "mock keyphrase alpha",
-                "mock keyphrase beta",
-                "mock keyphrase gamma",
-            ])
+            return self._KeyphraseList(
+                keyphrases=[
+                    "mock keyphrase alpha",
+                    "mock keyphrase beta",
+                    "mock keyphrase gamma",
+                ]
+            )
 
         # Normalization: plain string output, prompt mentions "canonical form"
         if output_structure is None and "canonical form" in prompt:
-            m = re.search(r'(?:Query|Utterance|Tweet):\s*(.+)', prompt)
+            m = re.search(r"(?:Query|Utterance|Tweet):\s*(.+)", prompt)
             return m.group(1).strip().lower() if m else "normalized text"
+
+        # ClusterLLM triplet: "Option A: ... Option B: ..."
+        if "Option A:" in prompt and "Option B:" in prompt:
+            m_anchor = re.search(r"Anchor (?:Query|Utterance|Tweet):\s*(.+)", prompt)
+            m_a = re.search(r"Option A:\s*(.+)", prompt)
+            m_b = re.search(r"Option B:\s*(.+)", prompt)
+            if m_anchor and m_a and m_b:
+                anchor_text = m_anchor.group(1).strip()
+                a_text = m_a.group(1).strip()
+                l_anchor = self._doc_label.get(anchor_text)
+                l_a = self._doc_label.get(a_text)
+                if l_anchor is not None and l_a is not None:
+                    return "A" if l_anchor == l_a else "B"
+            return "A"
 
         # For pairwise and correction: look up the last two labelled texts in the
         # prompt (last occurrence avoids matching the few-shot example lines).
         # Pairwise patterns: "Query 1:", "Utterance 1:", "Tweet 1:"
-        m1_all = re.findall(r'(?:Query|Utterance|Tweet) 1:\s*(.+)', prompt)
-        m2_all = re.findall(r'(?:Query|Utterance|Tweet) 2:\s*(.+)', prompt)
+        m1_all = re.findall(r"(?:Query|Utterance|Tweet) 1:\s*(.+)", prompt)
+        m2_all = re.findall(r"(?:Query|Utterance|Tweet) 2:\s*(.+)", prompt)
         # Correction patterns: "User Query:", "User Utterance:", "Tweet:"
         if not m1_all:
-            m1_all = re.findall(r'(?:User Query|User Utterance|Tweet):\s*(.+)', prompt)
-            m2_all = re.findall(r'Representative (?:Query|Utterance|Tweet):\s*(.+)', prompt)
+            m1_all = re.findall(r"(?:User Query|User Utterance|Tweet):\s*(.+)", prompt)
+            m2_all = re.findall(
+                r"Representative (?:Query|Utterance|Tweet):\s*(.+)", prompt
+            )
 
         if m1_all and m2_all:
             t1 = m1_all[-1].strip()
@@ -155,6 +176,7 @@ class MockLLMService:
 # =============================================================================
 PASS = "\033[92mPASS\033[0m"
 FAIL = "\033[91mFAIL\033[0m"
+
 
 def _check(assignments, name):
     """Return True if assignments look valid."""
@@ -184,6 +206,7 @@ def main():
     # ── 1. Load real embedder ─────────────────────────────────────────────────
     print("\n[Setup] Loading sentence-transformer embedder...")
     from src.llm_service import SentenceTransformerEmbeddings
+
     embedder = SentenceTransformerEmbeddings("all-mpnet-base-v2")
     features = np.array(embedder.embed_documents(DOCS))
     print(f"  Embedded {len(DOCS)} docs → shape {features.shape}")
@@ -196,6 +219,7 @@ def main():
     print("\n[1/5] K-Means baseline")
     try:
         from src.baselines import run_naive_kmeans
+
         assignments = run_naive_kmeans(features, N_CLUSTERS)
         results["kmeans"] = _check(assignments, "K-Means")
     except Exception:
@@ -208,6 +232,7 @@ def main():
     try:
         from src.jose_embeddings import JoSEEmbeddings
         from src.baselines import run_spherical_kmeans
+
         jose = JoSEEmbeddings(vector_size=50, window=3, min_count=1, epochs=5, seed=42)
         jose.fit(DOCS)
         jose_features = np.array(jose.embed_documents(DOCS))
@@ -221,8 +246,11 @@ def main():
     # ── 4. PCKMeans (pairwise constraints) ───────────────────────────────────
     print("\n[3/5] PCKMeans (pairwise constraints, mock LLM)")
     try:
-        from src.clustering_methods.pairwise_constraints import cluster_via_pairwise_constraints
+        from src.clustering_methods.pairwise_constraints import (
+            cluster_via_pairwise_constraints,
+        )
         from src.config import BANK77_PC_PROMPT_TEMPLATE
+
         with tempfile.TemporaryDirectory() as tmpdir:
             assignments = cluster_via_pairwise_constraints(
                 dataset_name="smoke",
@@ -232,9 +260,10 @@ def main():
                 n_clusters=N_CLUSTERS,
                 llm_service=llm,
                 prompt_template=BANK77_PC_PROMPT_TEMPLATE,
-                num_pairs=30,           # tiny budget for speed
-                strategy='similarity',
+                num_pairs=30,  # tiny budget for speed
+                strategy="similarity",
                 output_path=os.path.join(tmpdir, "pairwise_out.csv"),
+                output_dir=tmpdir,
             )
         results["pairwise"] = _check(assignments, "PCKMeans")
     except Exception:
@@ -248,6 +277,7 @@ def main():
         from src.baselines import run_naive_kmeans
         from src.clustering_methods.clustering_correction import cluster_via_correction
         from src.config import BANK77_CORRECTION_PROMPT_TEMPLATE
+
         initial = run_naive_kmeans(features, N_CLUSTERS)
         with tempfile.TemporaryDirectory() as tmpdir:
             assignments = cluster_via_correction(
@@ -259,9 +289,10 @@ def main():
                 n_clusters=N_CLUSTERS,
                 llm_service=llm,
                 correction_prompt=BANK77_CORRECTION_PROMPT_TEMPLATE,
-                k_low_confidence=5,     # only correct 5 points
+                k_low_confidence=5,  # only correct 5 points
                 num_candidates=2,
                 queries_output_path=os.path.join(tmpdir, "correction_out.csv"),
+                output_dir=tmpdir,
             )
         results["correction"] = _check(assignments, "LLM Correction")
     except Exception:
@@ -272,8 +303,11 @@ def main():
     # ── 6. Keyphrase Expansion ────────────────────────────────────────────────
     print("\n[5/5] Keyphrase Expansion (mock LLM)")
     try:
-        from src.clustering_methods.keyphrase_expansion import cluster_via_keyphrase_expansion
+        from src.clustering_methods.keyphrase_expansion import (
+            cluster_via_keyphrase_expansion,
+        )
         from src.config import BANK77_KP_PROMPT_TEMPLATE
+
         with tempfile.TemporaryDirectory() as tmpdir:
             kp_results = cluster_via_keyphrase_expansion(
                 documents=DOCS,
@@ -297,10 +331,13 @@ def main():
         results["keyphrase"] = False
 
     # ── 7. LLM Normalization ──────────────────────────────────────────────────
-    print("\n[6/7] LLM Normalization (mock LLM)")
+    print("\n[6/8] LLM Normalization (mock LLM)")
     try:
-        from src.clustering_methods.llm_normalization import cluster_via_llm_normalization
+        from src.clustering_methods.llm_normalization import (
+            cluster_via_llm_normalization,
+        )
         from src.config import BANK77_NORM_PROMPT_TEMPLATE
+
         with tempfile.TemporaryDirectory() as tmpdir:
             assignments = cluster_via_llm_normalization(
                 documents=DOCS,
@@ -318,10 +355,11 @@ def main():
         results["normalization"] = False
 
     # ── 8. LLM Paraphrase Ensemble ────────────────────────────────────────────
-    print("\n[7/7] LLM Paraphrase Ensemble (mock LLM)")
+    print("\n[7/8] LLM Paraphrase Ensemble (mock LLM)")
     try:
         from src.clustering_methods.llm_paraphrase import cluster_via_llm_paraphrase
         from src.config import BANK77_PARAPHRASE_PROMPT_TEMPLATE
+
         with tempfile.TemporaryDirectory() as tmpdir:
             assignments = cluster_via_llm_paraphrase(
                 documents=DOCS,
@@ -338,18 +376,47 @@ def main():
         traceback.print_exc()
         results["paraphrase"] = False
 
+    # ── 9. ClusterLLM ─────────────────────────────────────────────────────────
+    print("\n[8/8] ClusterLLM (mock LLM)")
+    try:
+        from src.clustering_methods.cluster_llm import cluster_via_clusterllm
+        from src.config import (
+            BANK77_PC_PROMPT_TEMPLATE,
+            BANK77_CLUSTERLLM_TRIPLET_PROMPT,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assignments = cluster_via_clusterllm(
+                documents=DOCS,
+                features=features,
+                n_clusters=N_CLUSTERS,
+                llm_service=llm,
+                triplet_prompt_template=BANK77_CLUSTERLLM_TRIPLET_PROMPT,
+                pairwise_prompt_template=BANK77_PC_PROMPT_TEMPLATE,
+                n_triplets=10,
+                n_pairwise=10,
+                output_path=os.path.join(tmpdir, "clusterllm_out.csv"),
+                output_dir=tmpdir,
+            )
+        results["clusterllm"] = _check(assignments, "ClusterLLM")
+    except Exception:
+        print(f"  [{FAIL}] ClusterLLM raised an exception:")
+        traceback.print_exc()
+        results["clusterllm"] = False
+
     # ── Summary ───────────────────────────────────────────────────────────────
     print("\n" + "=" * 60)
     print("  Summary")
     print("=" * 60)
     names = {
-        "kmeans":        "K-Means baseline",
-        "jose":          "JoSE + Spherical K-Means",
-        "pairwise":      "PCKMeans",
-        "correction":    "LLM Correction",
-        "keyphrase":     "Keyphrase Expansion",
+        "kmeans": "K-Means baseline",
+        "jose": "JoSE + Spherical K-Means",
+        "pairwise": "PCKMeans",
+        "correction": "LLM Correction",
+        "keyphrase": "Keyphrase Expansion",
         "normalization": "LLM Normalization",
-        "paraphrase":    "LLM Paraphrase Ensemble",
+        "paraphrase": "LLM Paraphrase Ensemble",
+        "clusterllm": "ClusterLLM",
     }
     all_pass = True
     for key, label in names.items():

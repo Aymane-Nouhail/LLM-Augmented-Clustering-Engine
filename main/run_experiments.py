@@ -18,7 +18,6 @@ import argparse
 import numpy as np
 import pandas as pd
 import os
-import sys
 
 from src.config import (
     OPENAI_API_KEY,
@@ -31,6 +30,8 @@ from src.config import (
     PC_CONSTRAINT_SELECTION_STRATEGY,
     CORRECTION_K_LOW_CONFIDENCE,
     CORRECTION_NUM_CANDIDATE_CLUSTERS,
+    CLUSTERLLM_N_TRIPLETS,
+    CLUSTERLLM_N_PAIRWISE,
 )
 from src.data import load_dataset
 from src.llm_service import LLMService
@@ -42,17 +43,30 @@ from src.clustering_methods.clustering_correction import cluster_via_correction
 from src.clustering_methods.keyphrase_expansion import cluster_via_keyphrase_expansion
 from src.clustering_methods.llm_normalization import cluster_via_llm_normalization
 from src.clustering_methods.llm_paraphrase import cluster_via_llm_paraphrase
+from src.clustering_methods.cluster_llm import cluster_via_clusterllm
 
 RESULTS_PATH = os.path.join(RESULTS_ROOT, "experiment_results_table.csv")
+COSTS_PATH = os.path.join(RESULTS_ROOT, "llm_costs.csv")
 ALL_DATASETS = ["bank77", "clinc", "tweet"]
-ALL_METHODS  = ["kmeans", "jose", "pairwise", "correction", "keyphrase", "normalization", "paraphrase"]
+ALL_METHODS = [
+    "kmeans",
+    "jose",
+    "pairwise",
+    "correction",
+    "keyphrase",
+    "normalization",
+    "paraphrase",
+    "clusterllm",
+]
 
 
 def _get_prompts(dataset_name: str) -> dict:
     """Return per-dataset prompt templates."""
     if dataset_name not in DATASET_PROMPTS:
-        raise ValueError(f"No prompts defined for dataset '{dataset_name}'. "
-                         f"Supported: {list(DATASET_PROMPTS.keys())}")
+        raise ValueError(
+            f"No prompts defined for dataset '{dataset_name}'. "
+            f"Supported: {list(DATASET_PROMPTS.keys())}"
+        )
     return DATASET_PROMPTS[dataset_name]
 
 
@@ -85,21 +99,23 @@ def run_one_dataset(
     # Method 1: K-Means baseline                                          #
     # ------------------------------------------------------------------ #
     if "kmeans" in methods:
-        print("\n[1/7] K-Means (all-mpnet-base-v2)")
+        print("\n[1/8] K-Means (all-mpnet-base-v2)")
         assignments = run_naive_kmeans(features, n_clusters)
         metrics = calculate_clustering_metrics(labels, assignments, n_clusters)
-        results.append({
-            "Dataset": dataset_name,
-            "Method": "KMeans",
-            **_fmt_metrics(metrics),
-        })
+        results.append(
+            {
+                "Dataset": dataset_name,
+                "Method": "KMeans",
+                **_fmt_metrics(metrics),
+            }
+        )
         _print_metrics(metrics)
 
     # ------------------------------------------------------------------ #
     # Method 2: JoSE + Spherical K-Means                                 #
     # ------------------------------------------------------------------ #
     if "jose" in methods:
-        print("\n[2/7] JoSE + Spherical K-Means (Word2Vec from scratch)")
+        print("\n[2/8] JoSE + Spherical K-Means (Word2Vec from scratch)")
         jose = JoSEEmbeddings(
             vector_size=100, window=5, min_count=1, epochs=10, seed=42
         )
@@ -107,11 +123,13 @@ def run_one_dataset(
         jose_features = np.array(jose.embed_documents(docs))
         assignments = run_spherical_kmeans(jose_features, n_clusters)
         metrics = calculate_clustering_metrics(labels, assignments, n_clusters)
-        results.append({
-            "Dataset": dataset_name,
-            "Method": "JoSE + Spherical KMeans",
-            **_fmt_metrics(metrics),
-        })
+        results.append(
+            {
+                "Dataset": dataset_name,
+                "Method": "JoSE + Spherical KMeans",
+                **_fmt_metrics(metrics),
+            }
+        )
         _print_metrics(metrics)
 
     # ------------------------------------------------------------------ #
@@ -125,7 +143,8 @@ def run_one_dataset(
     # Method 3: PCKMeans (pairwise constraints)                           #
     # ------------------------------------------------------------------ #
     if "pairwise" in methods:
-        print("\n[3/7] PCKMeans (pairwise constraints via LLM)")
+        print("\n[3/8] PCKMeans (pairwise constraints via LLM)")
+        llm_service.cost_tracker.set_context("PCKMeans", dataset_name)
         assignments = cluster_via_pairwise_constraints(
             dataset_name=dataset_name,
             documents=docs,
@@ -137,23 +156,28 @@ def run_one_dataset(
             num_pairs=PC_NUM_PAIRS_TO_QUERY,
             strategy=PC_CONSTRAINT_SELECTION_STRATEGY,
             output_path=os.path.join(output_dir, "pairwise_queries_output.csv"),
+            output_dir=output_dir,
         )
         metrics = (
             calculate_clustering_metrics(labels, assignments, n_clusters)
-            if assignments is not None else {}
+            if assignments is not None
+            else {}
         )
-        results.append({
-            "Dataset": dataset_name,
-            "Method": "PCKMeans",
-            **_fmt_metrics(metrics),
-        })
+        results.append(
+            {
+                "Dataset": dataset_name,
+                "Method": "PCKMeans",
+                **_fmt_metrics(metrics),
+            }
+        )
         _print_metrics(metrics)
 
     # ------------------------------------------------------------------ #
     # Method 4: LLM Correction                                           #
     # ------------------------------------------------------------------ #
     if "correction" in methods:
-        print("\n[4/7] LLM Correction")
+        print("\n[4/8] LLM Correction")
+        llm_service.cost_tracker.set_context("LLM Correction", dataset_name)
         initial = run_naive_kmeans(features, n_clusters)
         assignments = cluster_via_correction(
             dataset_name=dataset_name,
@@ -166,39 +190,51 @@ def run_one_dataset(
             correction_prompt=prompts["correction"],
             k_low_confidence=CORRECTION_K_LOW_CONFIDENCE,
             num_candidates=CORRECTION_NUM_CANDIDATE_CLUSTERS,
-            queries_output_path=os.path.join(output_dir, "correction_queries_output.csv"),
+            queries_output_path=os.path.join(
+                output_dir, "correction_queries_output.csv"
+            ),
+            output_dir=output_dir,
         )
         metrics = calculate_clustering_metrics(labels, assignments, n_clusters)
-        results.append({
-            "Dataset": dataset_name,
-            "Method": "LLM Correction",
-            **_fmt_metrics(metrics),
-        })
+        results.append(
+            {
+                "Dataset": dataset_name,
+                "Method": "LLM Correction",
+                **_fmt_metrics(metrics),
+            }
+        )
         _print_metrics(metrics)
 
     # ------------------------------------------------------------------ #
     # Method 5: Keyphrase Clustering                                      #
     # ------------------------------------------------------------------ #
     if "keyphrase" in methods:
-        print("\n[5/7] Keyphrase Clustering (LLM expansion + K-Means)")
+        print("\n[5/8] Keyphrase Clustering (LLM expansion + K-Means)")
+        llm_service.cost_tracker.set_context("Keyphrase", dataset_name)
         kp_results = cluster_via_keyphrase_expansion(
             documents=docs,
             features=features,
             n_clusters=n_clusters,
             llm_service=llm_service,
             keyphrase_prompt_template=prompts["kp"],
-            keyphrase_output_csv_path=os.path.join(output_dir, "keyphrase_expansions_output.csv"),
+            keyphrase_output_csv_path=os.path.join(
+                output_dir, "keyphrase_expansions_output.csv"
+            ),
         )
         # Paper (Viswanathan et al. 2023, §2.1) uses concatenation of the
         # keyphrase embedding with the original document embedding.
         for variant in ["concatenated", "average", "weighted_1.0"]:
             if kp_results.get(variant) is not None:
-                metrics = calculate_clustering_metrics(labels, kp_results[variant], n_clusters)
-                results.append({
-                    "Dataset": dataset_name,
-                    "Method": f"Keyphrase ({variant})",
-                    **_fmt_metrics(metrics),
-                })
+                metrics = calculate_clustering_metrics(
+                    labels, kp_results[variant], n_clusters
+                )
+                results.append(
+                    {
+                        "Dataset": dataset_name,
+                        "Method": f"Keyphrase ({variant})",
+                        **_fmt_metrics(metrics),
+                    }
+                )
                 _print_metrics(metrics, label=f"  variant={variant}")
                 break  # only report the best available variant
 
@@ -206,7 +242,8 @@ def run_one_dataset(
     # Method 6: LLM Normalization                                         #
     # ------------------------------------------------------------------ #
     if "normalization" in methods:
-        print("\n[6/7] LLM Normalization (canonical rewriting + K-Means)")
+        print("\n[6/8] LLM Normalization (canonical rewriting + K-Means)")
+        llm_service.cost_tracker.set_context("LLM Normalization", dataset_name)
         assignments = cluster_via_llm_normalization(
             documents=docs,
             features=features,
@@ -216,19 +253,26 @@ def run_one_dataset(
             output_path=os.path.join(output_dir, "normalization_output.csv"),
             output_dir=output_dir,
         )
-        metrics = calculate_clustering_metrics(labels, assignments, n_clusters) if assignments is not None else {}
-        results.append({
-            "Dataset": dataset_name,
-            "Method": "LLM Normalization",
-            **_fmt_metrics(metrics),
-        })
+        metrics = (
+            calculate_clustering_metrics(labels, assignments, n_clusters)
+            if assignments is not None
+            else {}
+        )
+        results.append(
+            {
+                "Dataset": dataset_name,
+                "Method": "LLM Normalization",
+                **_fmt_metrics(metrics),
+            }
+        )
         _print_metrics(metrics)
 
     # ------------------------------------------------------------------ #
     # Method 7: LLM Paraphrase Ensemble                                   #
     # ------------------------------------------------------------------ #
     if "paraphrase" in methods:
-        print("\n[7/7] LLM Paraphrase Ensemble (mean-pooled + K-Means)")
+        print("\n[7/8] LLM Paraphrase Ensemble (mean-pooled + K-Means)")
+        llm_service.cost_tracker.set_context("LLM Paraphrase", dataset_name)
         assignments = cluster_via_llm_paraphrase(
             documents=docs,
             features=features,
@@ -238,12 +282,50 @@ def run_one_dataset(
             output_path=os.path.join(output_dir, "paraphrase_output.csv"),
             output_dir=output_dir,
         )
-        metrics = calculate_clustering_metrics(labels, assignments, n_clusters) if assignments is not None else {}
-        results.append({
-            "Dataset": dataset_name,
-            "Method": "LLM Paraphrase Ensemble",
-            **_fmt_metrics(metrics),
-        })
+        metrics = (
+            calculate_clustering_metrics(labels, assignments, n_clusters)
+            if assignments is not None
+            else {}
+        )
+        results.append(
+            {
+                "Dataset": dataset_name,
+                "Method": "LLM Paraphrase Ensemble",
+                **_fmt_metrics(metrics),
+            }
+        )
+        _print_metrics(metrics)
+
+    # ------------------------------------------------------------------ #
+    # Method 8: ClusterLLM                                                #
+    # ------------------------------------------------------------------ #
+    if "clusterllm" in methods:
+        print("\n[8/8] ClusterLLM (triplet + hierarchical pairwise, Zhang et al. 2023)")
+        llm_service.cost_tracker.set_context("ClusterLLM", dataset_name)
+        assignments = cluster_via_clusterllm(
+            documents=docs,
+            features=features,
+            n_clusters=n_clusters,
+            llm_service=llm_service,
+            triplet_prompt_template=prompts["triplet"],
+            pairwise_prompt_template=prompts["pc"],
+            n_triplets=CLUSTERLLM_N_TRIPLETS,
+            n_pairwise=CLUSTERLLM_N_PAIRWISE,
+            output_path=os.path.join(output_dir, "clusterllm_output.csv"),
+            output_dir=output_dir,
+        )
+        metrics = (
+            calculate_clustering_metrics(labels, assignments, n_clusters)
+            if assignments is not None
+            else {}
+        )
+        results.append(
+            {
+                "Dataset": dataset_name,
+                "Method": "ClusterLLM",
+                **_fmt_metrics(metrics),
+            }
+        )
         _print_metrics(metrics)
 
     return results
@@ -253,11 +335,11 @@ def run_one_dataset(
 # Formatting helpers                                                  #
 # ------------------------------------------------------------------ #
 
+
 def _fmt_metrics(metrics: dict) -> dict:
     """Round metric values to 3 decimal places."""
     return {
-        k: round(float(v), 3) if v is not None else None
-        for k, v in metrics.items()
+        k: round(float(v), 3) if v is not None else None for k, v in metrics.items()
     }
 
 
@@ -273,6 +355,7 @@ def _print_metrics(metrics: dict, label: str = "") -> None:
 # ------------------------------------------------------------------ #
 # Main                                                                #
 # ------------------------------------------------------------------ #
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -291,13 +374,19 @@ def main():
     args = parser.parse_args()
 
     datasets = [d.strip() for d in args.datasets.split(",") if d.strip()]
-    methods  = ALL_METHODS if args.methods == "all" else [m.strip() for m in args.methods.split(",")]
+    methods = (
+        ALL_METHODS
+        if args.methods == "all"
+        else [m.strip() for m in args.methods.split(",")]
+    )
 
     print(f"\nDatasets : {datasets}")
     print(f"Methods  : {methods}")
     print(f"Embedding: {EMBEDDING_BACKEND}\n")
 
-    llm_service = LLMService(api_key=OPENAI_API_KEY or "", embedding_backend=EMBEDDING_BACKEND)
+    llm_service = LLMService(
+        api_key=OPENAI_API_KEY or "", embedding_backend=EMBEDDING_BACKEND
+    )
 
     all_results = []
     for dataset in datasets:
@@ -312,9 +401,9 @@ def main():
     df.to_csv(RESULTS_PATH, index=False)
 
     # Print pivot table matching paper's Table 2 format
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("RESULTS TABLE")
-    print("="*60)
+    print("=" * 60)
     for dataset in datasets:
         subset = df[df["Dataset"] == dataset]
         if subset.empty:
@@ -324,10 +413,35 @@ def main():
         print(f"  {'-'*35} {'-'*6}  {'-'*6}")
         for _, row in subset.iterrows():
             acc = f"{row['Accuracy']:.3f}" if pd.notna(row.get("Accuracy")) else "  —  "
-            nmi = f"{row['NMI']:.3f}"      if pd.notna(row.get("NMI"))      else "  —  "
+            nmi = f"{row['NMI']:.3f}" if pd.notna(row.get("NMI")) else "  —  "
             print(f"  {row['Method']:<35} {acc:>6}  {nmi:>6}")
 
     print(f"\nFull results saved to {RESULTS_PATH}")
+
+    # Save LLM cost breakdown
+    llm_service.cost_tracker.save(COSTS_PATH)
+
+    # Print cost summary table
+    summary = llm_service.cost_tracker.summary()
+    if summary:
+        print("\n" + "=" * 60)
+        print("LLM COST SUMMARY")
+        print("=" * 60)
+        print(
+            f"  {'Method':<30} {'Dataset':<8} {'Calls':>6}  {'Input':>8}  {'Cached':>8}  {'Output':>7}  {'Cost $':>8}"
+        )
+        print(f"  {'-'*30} {'-'*8} {'-'*6}  {'-'*8}  {'-'*8}  {'-'*7}  {'-'*8}")
+        total_cost = 0.0
+        for row in summary:
+            print(
+                f"  {row['method']:<30} {row['dataset']:<8} {row['calls']:>6}  "
+                f"{row['input_tokens']:>8}  {row['cached_tokens']:>8}  "
+                f"{row['output_tokens']:>7}  {row['cost_usd']:>8.4f}"
+            )
+            total_cost += row["cost_usd"]
+        print(
+            f"  {'TOTAL':<30} {'':8} {'':>6}  {'':>8}  {'':>8}  {'':>7}  {total_cost:>8.4f}"
+        )
 
 
 if __name__ == "__main__":

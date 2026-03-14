@@ -19,7 +19,7 @@ typically underperforms pre-trained encoders.
 
 import re
 import numpy as np
-from typing import List, Optional
+from typing import List
 from langchain_core.embeddings import Embeddings
 
 
@@ -73,7 +73,7 @@ class JoSEEmbeddings(Embeddings):
             vector_size=self.vector_size,
             window=self.window,
             min_count=self.min_count,
-            sg=0,           # CBOW, as used in JoSE paper
+            sg=0,  # CBOW, as used in JoSE paper
             workers=self.workers,
             seed=self.seed,
             epochs=self.epochs,
@@ -84,7 +84,9 @@ class JoSEEmbeddings(Embeddings):
         self._model.wv.vectors /= np.where(norms > 0, norms, 1.0)
 
         vocab_size = len(self._model.wv)
-        print(f"JoSE: trained on {len(tokenized)} docs | vocab={vocab_size} | dim={self.vector_size}")
+        print(
+            f"JoSE: trained on {len(tokenized)} docs | vocab={vocab_size} | dim={self.vector_size}"
+        )
         self._is_fitted = True
         return self
 
@@ -114,7 +116,9 @@ class JoSEEmbeddings(Embeddings):
         then L2-normalize the result.
         """
         if not self._is_fitted or self._model is None:
-            raise RuntimeError("JoSEEmbeddings.fit() must be called before embed_documents().")
+            raise RuntimeError(
+                "JoSEEmbeddings.fit() must be called before embed_documents()."
+            )
 
         tokens = self._tokenize(text)
         known = [t for t in tokens if t in self._model.wv]

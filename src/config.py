@@ -6,7 +6,9 @@ load_dotenv()
 # --- API Configuration ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
-    print("Warning: OPENAI_API_KEY not set. LLM generation methods (keyphrase, pairwise, correction) will be unavailable.")
+    print(
+        "Warning: OPENAI_API_KEY not set. LLM generation methods (keyphrase, pairwise, correction) will be unavailable."
+    )
 
 # --- Embedding Backend ---
 # "sentence_transformers": use all-mpnet-base-v2 locally (recommended for replication)
@@ -14,16 +16,21 @@ if not OPENAI_API_KEY:
 EMBEDDING_BACKEND = "sentence_transformers"
 SENTENCE_TRANSFORMER_MODEL = "all-mpnet-base-v2"
 
-EMBEDDING_MODEL_NAME = "text-embedding-ada-002"  # used only when EMBEDDING_BACKEND="openai"
+EMBEDDING_MODEL_NAME = (
+    "text-embedding-ada-002"  # used only when EMBEDDING_BACKEND="openai"
+)
 GENERATION_MODEL_NAME = "gpt-4.1-nano"
 MOCKING_MODE = False
 
 # --- Clustering Parameters ---
-PC_NUM_PAIRS_TO_QUERY = 2000
-PC_CONSTRAINT_SELECTION_STRATEGY = 'similarity'  # 'random' or 'similarity'
+PC_NUM_PAIRS_TO_QUERY = 20000
+PC_CONSTRAINT_SELECTION_STRATEGY = "explore_consolidate"  # 'random', 'similarity', or 'explore_consolidate'
 
 CORRECTION_K_LOW_CONFIDENCE = 100
 CORRECTION_NUM_CANDIDATE_CLUSTERS = 3
+
+CLUSTERLLM_N_TRIPLETS = 1024
+CLUSTERLLM_N_PAIRWISE = 400
 
 # --- Data Loading & Results ---
 # All experiment outputs (embeddings cache, keyphrase cache, query logs, metrics) live here.
@@ -334,28 +341,64 @@ Output as a JSON list of strings.
 Tweet: {text}"""
 
 # ---------------------------------------------------------------------------
+# ClusterLLM — triplet prompts (Stage 1 perspective queries)
+# ---------------------------------------------------------------------------
+BANK77_CLUSTERLLM_TRIPLET_PROMPT = """You are an expert in banking and financial services.
+
+Anchor Query: {anchor}
+
+Option A: {option_a}
+Option B: {option_b}
+
+Which option (A or B) expresses the same banking intent as the Anchor Query?
+Respond with ONLY the letter A or B."""
+
+CLINC_CLUSTERLLM_TRIPLET_PROMPT = """You are an expert in conversational AI intent classification.
+
+Anchor Utterance: {anchor}
+
+Option A: {option_a}
+Option B: {option_b}
+
+Which option (A or B) expresses the same intent as the Anchor Utterance?
+Respond with ONLY the letter A or B."""
+
+TWEET_CLUSTERLLM_TRIPLET_PROMPT = """You are an expert in social media content analysis.
+
+Anchor Tweet: {anchor}
+
+Option A: {option_a}
+Option B: {option_b}
+
+Which option (A or B) is about the same topic as the Anchor Tweet?
+Respond with ONLY the letter A or B."""
+
+# ---------------------------------------------------------------------------
 # Routing: maps dataset name → its prompt dict
 # ---------------------------------------------------------------------------
 DATASET_PROMPTS = {
     "bank77": {
-        "kp":            BANK77_KP_PROMPT_TEMPLATE,
-        "pc":            BANK77_PC_PROMPT_TEMPLATE,
-        "correction":    BANK77_CORRECTION_PROMPT_TEMPLATE,
+        "kp": BANK77_KP_PROMPT_TEMPLATE,
+        "pc": BANK77_PC_PROMPT_TEMPLATE,
+        "correction": BANK77_CORRECTION_PROMPT_TEMPLATE,
         "normalization": BANK77_NORM_PROMPT_TEMPLATE,
-        "paraphrase":    BANK77_PARAPHRASE_PROMPT_TEMPLATE,
+        "paraphrase": BANK77_PARAPHRASE_PROMPT_TEMPLATE,
+        "triplet": BANK77_CLUSTERLLM_TRIPLET_PROMPT,
     },
     "clinc": {
-        "kp":            CLINC_KP_PROMPT_TEMPLATE,
-        "pc":            CLINC_PC_PROMPT_TEMPLATE,
-        "correction":    CLINC_CORRECTION_PROMPT_TEMPLATE,
+        "kp": CLINC_KP_PROMPT_TEMPLATE,
+        "pc": CLINC_PC_PROMPT_TEMPLATE,
+        "correction": CLINC_CORRECTION_PROMPT_TEMPLATE,
         "normalization": CLINC_NORM_PROMPT_TEMPLATE,
-        "paraphrase":    CLINC_PARAPHRASE_PROMPT_TEMPLATE,
+        "paraphrase": CLINC_PARAPHRASE_PROMPT_TEMPLATE,
+        "triplet": CLINC_CLUSTERLLM_TRIPLET_PROMPT,
     },
     "tweet": {
-        "kp":            TWEET_KP_PROMPT_TEMPLATE,
-        "pc":            TWEET_PC_PROMPT_TEMPLATE,
-        "correction":    TWEET_CORRECTION_PROMPT_TEMPLATE,
+        "kp": TWEET_KP_PROMPT_TEMPLATE,
+        "pc": TWEET_PC_PROMPT_TEMPLATE,
+        "correction": TWEET_CORRECTION_PROMPT_TEMPLATE,
         "normalization": TWEET_NORM_PROMPT_TEMPLATE,
-        "paraphrase":    TWEET_PARAPHRASE_PROMPT_TEMPLATE,
+        "paraphrase": TWEET_PARAPHRASE_PROMPT_TEMPLATE,
+        "triplet": TWEET_CLUSTERLLM_TRIPLET_PROMPT,
     },
 }
