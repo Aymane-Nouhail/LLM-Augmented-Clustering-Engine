@@ -1,7 +1,26 @@
 .venv_project/
 __pycache__/
 *.pkl
+*.csv
+*.npy
 .env
 cmvc/
 active_semi_supervised_clustering/
 datasets/
+results/
+
+# PDFs
+*.pdf
+
+# LaTeX build artefacts
+report/*.aux
+report/*.bbl
+report/*.blg
+report/*.log
+report/*.out
+report/*.toc
+report/*.fls
+report/*.fdb_latexmk
+report/*.synctex.gz
+report/*.synctex(busy)
+report/figures/*.pdf
