@@ -115,7 +115,7 @@ def run_one_dataset(
     # Method 2: JoSE + Spherical K-Means                                 #
     # ------------------------------------------------------------------ #
     if "jose" in methods:
-        print("\n[2/8] JoSE + Spherical K-Means (Word2Vec from scratch)")
+        print("\n[2/8] JoSE + Spherical K-Means (Riemannian SGD)")
         jose = JoSEEmbeddings(
             vector_size=100, window=5, min_count=1, epochs=10, seed=42
         )
